@@ -15,13 +15,13 @@ interface ApiService {
 
     // ========== PERFIL DE USUARIO ==========
     @GET("api/users/profile")
-    suspend fun getProfile(@Header("Authorization") token: String): Response<UserProfile>
+    suspend fun getProfile(@Header("Authorization") token: String): Response<UserProfileResponse>
 
     @PUT("api/users/profile")
     suspend fun updateProfile(
         @Header("Authorization") token: String,
         @Body profile: UpdateProfileRequest
-    ): Response<UserProfile>
+    ): Response<UserProfileResponse>
 
     @PUT("api/auth/change-password")
     suspend fun changePassword(
@@ -42,14 +42,14 @@ interface ApiService {
     suspend fun getUser(
         @Header("Authorization") token: String,
         @Path("id") id: Int
-    ): Response<UserProfile>
+    ): Response<UserProfileResponse>
 
     @PUT("api/users/{id}/roles")
     suspend fun updateUserRoles(
         @Header("Authorization") token: String,
         @Path("id") id: Int,
         @Body roleRequest: UpdateUserRoleRequest
-    ): Response<UserProfile>
+    ): Response<UserProfileResponse>
 
     @DELETE("api/users/{id}")
     suspend fun deleteUser(
@@ -59,25 +59,25 @@ interface ApiService {
 
     // ========== UBICACIONES ==========
     @GET("api/locations/countries")
-    suspend fun getCountries(): Response<List<Country>>
+    suspend fun getCountries(): Response<CountriesResponse>
 
     @POST("api/locations/countries")
-    suspend fun createCountry(@Body request: CreateLocationRequest): Response<Country>
+    suspend fun createCountry(@Body request: CreateLocationRequest): Response<CountryResponse>
 
     @GET("api/locations/states")
-    suspend fun getStates(@Query("country_id") countryId: Int? = null): Response<List<State>>
+    suspend fun getStates(@Query("country_id") countryId: Int? = null): Response<StatesResponse>
 
     @POST("api/locations/states")
-    suspend fun createState(@Body request: CreateLocationRequest): Response<State>
+    suspend fun createState(@Body request: CreateLocationRequest): Response<StateResponse>
 
     @GET("api/locations/cities")
-    suspend fun getCities(@Query("state_id") stateId: Int? = null): Response<List<City>>
+    suspend fun getCities(@Query("state_id") stateId: Int? = null): Response<CitiesResponse>
 
     @POST("api/locations/cities")
-    suspend fun createCity(@Body request: CreateLocationRequest): Response<City>
+    suspend fun createCity(@Body request: CreateLocationRequest): Response<CityResponse>
 
     @GET("api/auth/roles")
-    suspend fun getRoles(): Response<List<Role>>
+    suspend fun getRoles(): Response<RolesResponse>
 
 
     // ========== GESTIÓN DE CATEGORÍAS ==========
@@ -185,14 +185,14 @@ interface ApiService {
     suspend fun addToCart(
         @Header("Authorization") token: String,
         @Body item: AddToCartRequest
-    ): Response<Cart>
+    ): Response<CartMutationResponse>
 
     @PUT("api/sales/cart/update/{id}")
     suspend fun updateCartItem(
         @Header("Authorization") token: String,
         @Path("id") itemId: Int,
         @Body quantity: UpdateCartQuantityRequest
-    ): Response<Cart>
+    ): Response<CartMutationResponse>
 
     @DELETE("api/sales/cart/remove/{id}")
     suspend fun removeFromCart(
@@ -221,6 +221,6 @@ interface ApiService {
     suspend fun getSale(
         @Header("Authorization") token: String,
         @Path("id") saleId: Int
-    ): Response<Sale>
+    ): Response<SaleResponse>
 
 }

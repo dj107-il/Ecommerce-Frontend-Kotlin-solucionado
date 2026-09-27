@@ -21,6 +21,7 @@ import com.ecommerce.ecommerceapp.viewmodels.UserManagementViewModel
 fun UserManagementScreen(
     sessionManager: SessionManager,
     onNavigateBack: () -> Unit,
+    onLoginRequired: () -> Unit = onNavigateBack,
     viewModel: UserManagementViewModel = viewModel { UserManagementViewModel(sessionManager) }
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -45,6 +46,11 @@ fun UserManagementScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Gestión de Usuarios") },
+                actions = {
+                    IconButton(onClick = { viewModel.loadRoles(); viewModel.loadPage(viewModel.currentPage) }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Recargar usuarios y roles")
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
@@ -60,6 +66,10 @@ fun UserManagementScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
+            if (viewModel.isSessionExpired) {
+                Text("Tu sesión venció o no es válida.")
+                Button(onClick = onLoginRequired) { Text("Iniciar sesión") }
+            }
             // Barra de búsqueda
             OutlinedTextField(
                 value = viewModel.searchQuery,
@@ -87,7 +97,7 @@ fun UserManagementScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(viewModel.users) { user ->
+                    items(viewModel.users, key = { it.iD_User }) { user ->
                         UserCard(
                             user = user,
                             availableRoles = viewModel.availableRoles,
@@ -204,7 +214,7 @@ fun UserCard(
             // Selector de nuevo rol
             ExposedDropdownMenuBox(
                 expanded = expandedRoles,
-                onExpandedChange = { expandedRoles = !expandedRoles }
+                onExpandedChange = { if (!isUpdatingRole) expandedRoles = !expandedRoles }
             ) {
                 OutlinedTextField(
                     value = "Cambiar rol",
@@ -222,6 +232,12 @@ fun UserCard(
                     expanded = expandedRoles,
                     onDismissRequest = { expandedRoles = false }
                 ) {
+                    if (availableRoles.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("Sin roles disponibles. Usa Recargar.") },
+                            onClick = {}, enabled = false
+                        )
+                    }
                     availableRoles.forEach { role ->
                         DropdownMenuItem(
                             text = { Text(role.TypeRole) },

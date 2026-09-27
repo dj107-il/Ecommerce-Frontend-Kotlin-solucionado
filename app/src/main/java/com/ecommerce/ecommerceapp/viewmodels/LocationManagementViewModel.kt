@@ -9,8 +9,14 @@ import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceapp.models.*
 import com.ecommerce.ecommerceapp.network.ApiClient
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import com.ecommerce.ecommerceapp.network.ApiService
 
-class LocationManagementViewModel : ViewModel() {
+class LocationManagementViewModel(private val api: ApiService = ApiClient.apiService) : ViewModel() {
+
+    private var statesJob: Job? = null
+    private var citiesJob: Job? = null
 
     // Listas de datos
     var countries by mutableStateOf<List<Country>>(emptyList())
@@ -42,12 +48,14 @@ class LocationManagementViewModel : ViewModel() {
         isLoadingCountries = true
         viewModelScope.launch {
             try {
-                val response = ApiClient.apiService.getCountries()
+                val response = api.getCountries()
                 if (response.isSuccessful && response.body() != null) {
-                    countries = response.body()!!
+                    countries = response.body()!!.countries
                 } else {
                     errorMessage = "Error al cargar países"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error loading countries", e)
@@ -57,45 +65,53 @@ class LocationManagementViewModel : ViewModel() {
         }
     }
 
-    fun loadStates(countryId: Int? = null) {
+    fun loadStates(countryId: Int? = selectedCountryForState?.iD_Country) {
+        statesJob?.cancel()
         isLoadingStates = true
-        viewModelScope.launch {
+        statesJob = viewModelScope.launch {
             try {
-                val response = ApiClient.apiService.getStates(countryId)
+                val response = api.getStates(countryId)
                 if (response.isSuccessful && response.body() != null) {
-                    states = response.body()!!
+                    states = response.body()!!.states
                 } else {
                     errorMessage = "Error al cargar estados"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error loading states", e)
             } finally {
-                isLoadingStates = false
+                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) isLoadingStates = false
             }
         }
     }
 
-    fun loadCities(stateId: Int? = null) {
+    fun loadCities(stateId: Int? = selectedStateForCity?.iD_States) {
+        citiesJob?.cancel()
         isLoadingCities = true
-        viewModelScope.launch {
+        citiesJob = viewModelScope.launch {
             try {
-                val response = ApiClient.apiService.getCities(stateId)
+                val response = api.getCities(stateId)
                 if (response.isSuccessful && response.body() != null) {
-                    cities = response.body()!!
+                    cities = response.body()!!.cities
                 } else {
                     errorMessage = "Error al cargar ciudades"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error loading cities", e)
             } finally {
-                isLoadingCities = false
+                if (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) isLoadingCities = false
             }
         }
     }
 
     fun createCountry() {
+        if (isCreating) return
+        clearMessages()
         if (newCountryName.isBlank()) {
             errorMessage = "El nombre del país es requerido"
             return
@@ -105,7 +121,7 @@ class LocationManagementViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val request = CreateLocationRequest(CountryName = newCountryName)
-                val response = ApiClient.apiService.createCountry(request)
+                val response = api.createCountry(request)
 
                 if (response.isSuccessful) {
                     successMessage = "País creado exitosamente"
@@ -114,6 +130,8 @@ class LocationManagementViewModel : ViewModel() {
                 } else {
                     errorMessage = "Error al crear el país"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error creating country", e)
@@ -124,6 +142,8 @@ class LocationManagementViewModel : ViewModel() {
     }
 
     fun createState() {
+        if (isCreating) return
+        clearMessages()
         if (newStateName.isBlank()) {
             errorMessage = "El nombre del estado es requerido"
             return
@@ -141,16 +161,17 @@ class LocationManagementViewModel : ViewModel() {
                     StatesName = newStateName,
                     iD_Country = selectedCountryForState!!.iD_Country
                 )
-                val response = ApiClient.apiService.createState(request)
+                val response = api.createState(request)
 
                 if (response.isSuccessful) {
                     successMessage = "Estado creado exitosamente"
                     newStateName = ""
-                    selectedCountryForState = null
                     loadStates() // Recargar lista
                 } else {
                     errorMessage = "Error al crear el estado"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error creating state", e)
@@ -161,6 +182,8 @@ class LocationManagementViewModel : ViewModel() {
     }
 
     fun createCity() {
+        if (isCreating) return
+        clearMessages()
         if (newCityName.isBlank()) {
             errorMessage = "El nombre de la ciudad es requerido"
             return
@@ -178,16 +201,17 @@ class LocationManagementViewModel : ViewModel() {
                     CityName = newCityName,
                     iD_States = selectedStateForCity!!.iD_States
                 )
-                val response = ApiClient.apiService.createCity(request)
+                val response = api.createCity(request)
 
                 if (response.isSuccessful) {
                     successMessage = "Ciudad creada exitosamente"
                     newCityName = ""
-                    selectedStateForCity = null
                     loadCities() // Recargar lista
                 } else {
                     errorMessage = "Error al crear la ciudad"
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("LOCATION_DEBUG", "Error creating city", e)
@@ -209,8 +233,17 @@ class LocationManagementViewModel : ViewModel() {
     }
 
     fun updateSelectedCountryForState(country: Country?) {
+        if (selectedCountryForState?.iD_Country == country?.iD_Country) return
         selectedCountryForState = country
+        selectedStateForCity = null
+        statesJob?.cancel()
+        citiesJob?.cancel()
+        states = emptyList()
+        cities = emptyList()
+        isLoadingStates = false
+        isLoadingCities = false
         clearMessages()
+        if (country != null) loadStates(country.iD_Country)
     }
 
     fun updateNewCityName(name: String) {
@@ -219,8 +252,13 @@ class LocationManagementViewModel : ViewModel() {
     }
 
     fun updateSelectedStateForCity(state: State?) {
+        if (state != null && state.iD_Country != selectedCountryForState?.iD_Country) return
         selectedStateForCity = state
+        citiesJob?.cancel()
+        cities = emptyList()
+        isLoadingCities = false
         clearMessages()
+        if (state != null) loadCities(state.iD_States)
     }
 
     fun clearMessages() {

@@ -112,19 +112,8 @@ class CartViewModel(private val sessionManager: SessionManager) : ViewModel() {
                     Log.d("CART_DEBUG", "Response code: ${response.code()}")
 
                     if (response.isSuccessful && response.body() != null) {
-                        val responseBody = response.body()!!
-                        Log.d("CART_DEBUG", "AddToCart SUCCESS - Response body:")
-                        Log.d("CART_DEBUG", "- Items en respuesta: ${responseBody.items.size}")
-                        Log.d("CART_DEBUG", "- Total items: ${responseBody.total_items}")
-                        Log.d("CART_DEBUG", "- Total amount: ${responseBody.total_amount}")
-                        responseBody.items.forEach { item ->
-                            Log.d("CART_DEBUG", "  * Producto: ${item.product?.ProductName}, Cantidad: ${item.quantity}")
-                        }
-
-                        cart = responseBody
-                        cartItemsCount = cart?.total_items ?: 0
+                        loadCart()
                         successMessage = "Producto agregado al carrito"
-                        Log.d("CART_DEBUG", "Producto agregado exitosamente. cartItemsCount actualizado a: $cartItemsCount")
                     } else {
                         val errorBody = response.errorBody()?.string()
                         Log.e("CART_DEBUG", "Error response body: $errorBody")
@@ -170,8 +159,7 @@ class CartViewModel(private val sessionManager: SessionManager) : ViewModel() {
                     )
 
                     if (response.isSuccessful && response.body() != null) {
-                        cart = response.body()
-                        cartItemsCount = cart?.total_items ?: 0
+                        loadCart()
                         successMessage = "Cantidad actualizada"
                         Log.d("CART_DEBUG", "Cantidad actualizada en el carrito")
                     } else {
@@ -256,6 +244,10 @@ class CartViewModel(private val sessionManager: SessionManager) : ViewModel() {
     }
 
     fun checkout() {
+        if (isCheckingOut || isLoadingCart || isAddingToCart || isUpdatingCart ||
+            isRemovingFromCart || isClearingCart) return
+        clearMessages()
+        lastCompletedSale = null
         if (checkoutDescription.isBlank()) {
             errorMessage = "Ingrese una descripción para el pedido"
             return

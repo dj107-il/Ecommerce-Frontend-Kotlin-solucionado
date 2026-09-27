@@ -38,6 +38,8 @@ class SalesHistoryViewModel(private val sessionManager: SessionManager) : ViewMo
     }
 
     fun loadSales(page: Int = 1) {
+        if (isLoadingSales) return
+        errorMessage = null
         isLoadingSales = true
         viewModelScope.launch {
             try {
@@ -53,8 +55,8 @@ class SalesHistoryViewModel(private val sessionManager: SessionManager) : ViewMo
                         val salesResponse = response.body()!!
                         sales = salesResponse.sales
                         currentPage = page
-                        totalPages = salesResponse.pagination?.total_pages ?: 1
-                        totalSales = salesResponse.total
+                        totalPages = (salesResponse.pagination?.pages ?: 1).coerceAtLeast(1)
+                        totalSales = salesResponse.pagination?.total ?: sales.size
                         Log.d("SALES_DEBUG", "Ventas cargadas: ${sales.size}")
                     } else {
                         if (response.code() == 404) {
@@ -88,8 +90,9 @@ class SalesHistoryViewModel(private val sessionManager: SessionManager) : ViewMo
                     val response = ApiClient.apiService.getSale("Bearer $token", saleId)
 
                     if (response.isSuccessful && response.body() != null) {
-                        selectedSale = response.body()
-                        showSaleDetailDialog = true
+                        selectedSale = response.body()?.sale
+                        showSaleDetailDialog = selectedSale != null
+                        if (selectedSale == null) errorMessage = "Respuesta sin detalle de venta"
                         Log.d("SALES_DEBUG", "Detalle de venta cargado: $saleId")
                     } else {
                         errorMessage = "Error al cargar los detalles de la venta"
@@ -140,6 +143,6 @@ class SalesHistoryViewModel(private val sessionManager: SessionManager) : ViewMo
     }
 
     fun getTotalOrders(): Int {
-        return sales.size
+        return totalSales
     }
 }

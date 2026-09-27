@@ -7,6 +7,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.ecommerce.ecommerceapp.ui.components.LocationDropdown
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,7 +26,7 @@ fun LocationManagementScreen(
     viewModel: LocationManagementViewModel = viewModel()
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
 
     // Manejar mensajes
     LaunchedEffect(viewModel.errorMessage) {
@@ -43,6 +47,15 @@ fun LocationManagementScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Gestión de Ubicaciones") },
+                actions = {
+                    IconButton(onClick = {
+                        viewModel.loadCountries()
+                        if (viewModel.selectedCountryForState != null) viewModel.loadStates()
+                        if (selectedTab == 2) viewModel.loadCities()
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Recargar ubicaciones")
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
@@ -68,7 +81,7 @@ fun LocationManagementScreen(
                     selected = selectedTab == 1,
                     onClick = {
                         selectedTab = 1
-                        viewModel.loadStates()
+                        if (viewModel.selectedCountryForState != null) viewModel.loadStates()
                     },
                     text = { Text("Estados") }
                 )
@@ -84,8 +97,8 @@ fun LocationManagementScreen(
 
             // Contenido según tab seleccionado
             when (selectedTab) {
-                0 -> CountriesTab(viewModel)
-                1 -> StatesTab(viewModel)
+                0 -> CountriesTab(viewModel) { selectedTab = 1 }
+                1 -> StatesTab(viewModel) { selectedTab = 2 }
                 2 -> CitiesTab(viewModel)
             }
         }
@@ -93,11 +106,12 @@ fun LocationManagementScreen(
 }
 
 @Composable
-fun CountriesTab(viewModel: LocationManagementViewModel) {
+fun CountriesTab(viewModel: LocationManagementViewModel, onShowStates: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         // Formulario para crear país
         Card(
@@ -150,6 +164,7 @@ fun CountriesTab(viewModel: LocationManagementViewModel) {
             }
         } else {
             LazyColumn(
+                modifier = Modifier.heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(viewModel.countries) { country ->
@@ -169,7 +184,7 @@ fun CountriesTab(viewModel: LocationManagementViewModel) {
                             )
 
                             IconButton(
-                                onClick = { viewModel.loadStates(country.iD_Country) }
+                                onClick = { viewModel.updateSelectedCountryForState(country); onShowStates() }
                             ) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Ver estados")  }
                         }
@@ -182,11 +197,12 @@ fun CountriesTab(viewModel: LocationManagementViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StatesTab(viewModel: LocationManagementViewModel) {
+fun StatesTab(viewModel: LocationManagementViewModel, onShowCities: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         // Formulario para crear estado
         Card(
@@ -202,39 +218,19 @@ fun StatesTab(viewModel: LocationManagementViewModel) {
                     fontWeight = FontWeight.Bold
                 )
 
-                // Selector de país
-                var expandedCountries by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedCountries,
-                    onExpandedChange = { expandedCountries = !expandedCountries }
-                ) {
-                    OutlinedTextField(
-                        value = viewModel.selectedCountryForState?.CountryName ?: "Seleccionar país",
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("País") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCountries) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expandedCountries,
-                        onDismissRequest = { expandedCountries = false }
-                    ) {
-                        viewModel.countries.forEach { country ->
-                            DropdownMenuItem(
-                                text = { Text(country.CountryName) },
-                                onClick = {
-                                    viewModel.updateSelectedCountryForState(country)
-                                    expandedCountries = false
-                                }
-                            )
-                        }
-                    }
-                }
+                LocationDropdown(
+                    label = "País", options = viewModel.countries,
+                    selected = viewModel.selectedCountryForState,
+                    optionLabel = { it.CountryName }, onSelect = viewModel::updateSelectedCountryForState,
+                    loading = viewModel.isLoadingCountries, enabled = !viewModel.isCreating
+                )
+                LocationDropdown(
+                    label = "Estado / departamento", options = viewModel.states,
+                    selected = viewModel.selectedStateForCity,
+                    optionLabel = { it.StatesName }, onSelect = viewModel::updateSelectedStateForCity,
+                    loading = viewModel.isLoadingStates,
+                    enabled = viewModel.selectedCountryForState != null && !viewModel.isCreating
+                )
 
                 OutlinedTextField(
                     value = viewModel.newStateName,
@@ -273,6 +269,7 @@ fun StatesTab(viewModel: LocationManagementViewModel) {
             }
         } else {
             LazyColumn(
+                modifier = Modifier.heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(viewModel.states) { state ->
@@ -293,14 +290,14 @@ fun StatesTab(viewModel: LocationManagementViewModel) {
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = state.country?.CountryName ?: "",
+                                    text = state.country ?: "",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
                             IconButton(
-                                onClick = { viewModel.loadCities(state.iD_States) }
+                                onClick = { viewModel.updateSelectedStateForCity(state); onShowCities() }
                             ) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Ver Ciudades")   }
                         }
@@ -314,15 +311,12 @@ fun StatesTab(viewModel: LocationManagementViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CitiesTab(viewModel: LocationManagementViewModel) {
-    // Cargar estados al inicializar la tab
-    LaunchedEffect(Unit) {
-        viewModel.loadStates()
-    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         // Formulario para crear ciudad
         Card(
@@ -338,39 +332,24 @@ fun CitiesTab(viewModel: LocationManagementViewModel) {
                     fontWeight = FontWeight.Bold
                 )
 
-                // Selector de estado
-                var expandedStates by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedStates,
-                    onExpandedChange = { expandedStates = !expandedStates }
-                ) {
-                    OutlinedTextField(
-                        value = viewModel.selectedStateForCity?.StatesName ?: "Seleccionar estado",
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Estado") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedStates) },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expandedStates,
-                        onDismissRequest = { expandedStates = false }
-                    ) {
-                        viewModel.states.forEach { state ->
-                            DropdownMenuItem(
-                                text = { Text("${state.StatesName} - ${state.country?.CountryName}") },
-                                onClick = {
-                                    viewModel.updateSelectedStateForCity(state)
-                                    expandedStates = false
-                                }
-                            )
-                        }
-                    }
-                }
+                LocationDropdown(
+                    label = "País",
+                    options = viewModel.countries,
+                    selected = viewModel.selectedCountryForState,
+                    optionLabel = { it.CountryName },
+                    onSelect = viewModel::updateSelectedCountryForState,
+                    loading = viewModel.isLoadingCountries,
+                    enabled = !viewModel.isCreating
+                )
+                LocationDropdown(
+                    label = "Estado / departamento",
+                    options = viewModel.states,
+                    selected = viewModel.selectedStateForCity,
+                    optionLabel = { it.StatesName },
+                    onSelect = viewModel::updateSelectedStateForCity,
+                    loading = viewModel.isLoadingStates,
+                    enabled = viewModel.selectedCountryForState != null && !viewModel.isCreating
+                )
 
                 OutlinedTextField(
                     value = viewModel.newCityName,
@@ -409,6 +388,7 @@ fun CitiesTab(viewModel: LocationManagementViewModel) {
             }
         } else {
             LazyColumn(
+                modifier = Modifier.heightIn(max = 360.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(viewModel.cities) { city ->

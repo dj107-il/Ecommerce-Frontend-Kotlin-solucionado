@@ -25,8 +25,10 @@ class WelcomeViewModel(private val sessionManager: SessionManager) : ViewModel()
 
     private fun loadUserData() {
         viewModelScope.launch {
-            userName = sessionManager.userName.first() ?: "Usuario"
-            isAdmin = sessionManager.isAdmin.first()
+            sessionManager.userName.collect { userName = it ?: "Usuario"}
+        }
+        viewModelScope.launch {
+            sessionManager.isAdmin.collect { isAdmin = it }
         }
     }
 

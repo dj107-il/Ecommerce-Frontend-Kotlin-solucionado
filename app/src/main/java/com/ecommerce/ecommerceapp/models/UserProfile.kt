@@ -13,7 +13,7 @@ data class UserProfile(
     val Email: String,
 
     @SerializedName("iD_City")
-    val iD_City: Int,
+    val iD_City: Int?,
 
     @SerializedName("city")
     val city: City? = null,
@@ -27,7 +27,10 @@ data class UpdateProfileRequest(
     val UserName: String,
 
     @SerializedName("iD_City")
-    val iD_City: Int
+    val iD_City: Int?,
+
+    @SerializedName("Email")
+    val Email: String? = null
 )
 
 data class ChangePasswordRequest(
@@ -36,4 +39,9 @@ data class ChangePasswordRequest(
 
     @SerializedName("new_password")
     val new_password: String
+)
+
+data class UserProfileResponse(
+    @SerializedName("user")
+    val user: UserProfile? = null
 )

@@ -11,12 +11,24 @@ import com.ecommerce.ecommerceapp.network.ApiClient
 import com.ecommerce.ecommerceapp.utils.SessionManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import android.util.Patterns
 
 class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel() {
 
     var userProfile by mutableStateOf<UserProfile?>(null)
+    private var statesJob: Job? = null
+    private var citiesJob: Job? = null
+    var email by mutableStateOf("")
+    var countries by mutableStateOf<List<Country>>(emptyList())
+    var states by mutableStateOf<List<State>>(emptyList())
+    var selectedCountryId by mutableStateOf<Int?>(null)
+    var selectedStateId by mutableStateOf<Int?>(null)
+    var isLoadingStates by mutableStateOf(false)
+    var isSessionExpired by mutableStateOf(false)
     var userName by mutableStateOf("")
-    var selectedCityId by mutableStateOf(1)
+    var selectedCityId by mutableStateOf<Int?>(null)
     var cities by mutableStateOf<List<City>>(emptyList())
 
     // Estados de carga
@@ -36,27 +48,68 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
 
     init {
         loadProfile()
-        loadCities()
     }
 
     fun loadProfile() {
+        if (isLoadingProfile || isUpdatingProfile) return
+        statesJob?.cancel()
+        citiesJob?.cancel()
+        isLoadingStates = false
+        isLoadingCities = false
+        clearMessages()
         isLoadingProfile = true
         viewModelScope.launch {
             try {
                 val token = sessionManager.token.first()
-                if (token != null) {
-                    val response = ApiClient.apiService.getProfile("Bearer $token")
-
-                    if (response.isSuccessful && response.body() != null) {
-                        userProfile = response.body()
-                        userName = userProfile?.UserName ?: ""
-                        selectedCityId = userProfile?.iD_City ?: 1
+                if (token.isNullOrBlank()) {
+                    expireSession()
+                    return@launch
+                }
+                val response = ApiClient.apiService.getProfile("Bearer $token")
+                val profile = response.body()?.user
+                if (response.code() == 401) {
+                    expireSession()
+                    return@launch
+                }
+                if (!response.isSuccessful || profile == null) {
+                    errorMessage = "No se pudo cargar el perfil. Usa Recargar."
+                    return@launch
+                }
+                userProfile = profile
+                userName = profile.UserName
+                email = profile.Email
+                selectedCountryId = null
+                selectedStateId = null
+                selectedCityId = null
+                countries = emptyList()
+                states = emptyList()
+                cities = emptyList()
+                val countryResponse = ApiClient.apiService.getCountries()
+                val stateResponse = ApiClient.apiService.getStates()
+                if (!countryResponse.isSuccessful || !stateResponse.isSuccessful ||
+                    countryResponse.body() == null || stateResponse.body() == null) {
+                    errorMessage = "No se pudieron cargar las ubicaciones. Usa Recargar."
+                    return@launch
+                }
+                countries = countryResponse.body()!!.countries
+                // La ciudad del perfil contiene el ID de su estado; este identifica al país.
+                val currentState = stateResponse.body()!!.states.find { it.iD_States == profile.city?.iD_States }
+                if (currentState != null && countries.any { it.iD_Country == currentState.iD_Country }) {
+                    selectedCountryId = currentState.iD_Country
+                    states = stateResponse.body()!!.states.filter { it.iD_Country == selectedCountryId }
+                    selectedStateId = currentState.iD_States
+                    val cityResponse = ApiClient.apiService.getCities(currentState.iD_States)
+                    if (cityResponse.isSuccessful && cityResponse.body() != null) {
+                        cities = cityResponse.body()!!.cities
+                        selectedCityId = cities.find { it.iD_City == profile.iD_City }?.iD_City
                     } else {
-                        errorMessage = "Error al cargar el perfil"
+                        errorMessage = "No se pudieron cargar las ciudades. Usa Recargar."
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                errorMessage = "Error de conexión: ${e.message}"
+                errorMessage = "No se pudo cargar el perfil o sus ubicaciones. Revisa la conexión y recarga."
                 Log.e("PROFILE_DEBUG", "Error loading profile", e)
             } finally {
                 isLoadingProfile = false
@@ -64,41 +117,70 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
         }
     }
 
+    private suspend fun expireSession() {
+        isSessionExpired = true
+        errorMessage = "Tu sesión venció o no es válida. Inicia sesión nuevamente."
+        sessionManager.clearSession()
+    }
+
     fun updateProfile() {
+        if (isUpdatingProfile || isLoadingProfile || isLoadingStates || isLoadingCities || isSessionExpired || userProfile == null) return
+        clearMessages()
         if (userName.isBlank()) {
             errorMessage = "El nombre de usuario es requerido"
             return
         }
 
+        if (!Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) {
+            errorMessage = "Escribe un correo electrónico válido"
+            return
+        }
+        val state = states.find { it.iD_States == selectedStateId && it.iD_Country == selectedCountryId }
+        val city = cities.find { it.iD_City == selectedCityId && it.iD_States == state?.iD_States }
+        if (state == null || city == null) {
+            errorMessage = "Selecciona país, estado y ciudad antes de guardar"
+            return
+        }
+        // Capturar los datos antes de iniciar la petición.
+        val updateRequest = UpdateProfileRequest(
+            UserName = userName.trim(), iD_City = city.iD_City, Email = email.trim()
+        )
         isUpdatingProfile = true
         viewModelScope.launch {
             try {
                 val token = sessionManager.token.first()
-                if (token != null) {
-                    val updateRequest = UpdateProfileRequest(
-                        UserName = userName,
-                        iD_City = selectedCityId
+                if (token.isNullOrBlank()) {
+                    expireSession()
+                    return@launch
+                }
+                val response = ApiClient.apiService.updateProfile("Bearer $token", updateRequest)
+
+                if (response.isSuccessful && response.body()?.user != null) {
+                    userProfile = response.body()!!.user
+
+                    // Actualizar sesión con nuevo nombre
+                    sessionManager.saveUserSession(
+                        token = token,
+                        userName = userProfile!!.UserName,
+                        userEmail = userProfile!!.Email,
+                        isAdmin = userProfile?.roles?.any { it.TypeRole == "Administrador" } ?: false,
+                        roles = userProfile?.roles?.map { it.TypeRole } ?: emptyList()
                     )
 
-                    val response = ApiClient.apiService.updateProfile("Bearer $token", updateRequest)
-
-                    if (response.isSuccessful && response.body() != null) {
-                        userProfile = response.body()
-
-                        // Actualizar sesión con nuevo nombre
-                        sessionManager.saveUserSession(
-                            token = token,
-                            userName = userName,
-                            userEmail = userProfile?.Email ?: "",
-                            isAdmin = userProfile?.roles?.any { it.TypeRole == "Administrador" } ?: false,
-                            roles = userProfile?.roles?.map { it.TypeRole } ?: emptyList()
-                        )
-
-                        successMessage = "Perfil actualizado exitosamente"
-                    } else {
-                        errorMessage = "Error al actualizar el perfil"
+                    email = userProfile!!.Email
+                    userName = userProfile!!.UserName
+                    selectedCityId = userProfile?.iD_City
+                    successMessage = "Perfil actualizado exitosamente"
+                } else {
+                    if (response.code() == 401) expireSession()
+                    else errorMessage = when (response.code()) {
+                        409 -> "Ese correo ya está en uso. Elige otro."
+                        400 -> "Revisa los datos del perfil antes de guardar."
+                        else -> "No se pudo guardar el perfil. Intenta nuevamente."
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("PROFILE_DEBUG", "Error updating profile", e)
@@ -109,6 +191,8 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
     }
 
     fun changePassword() {
+        if (isChangingPassword || isSessionExpired) return
+        clearMessages()
         // Validaciones
         if (currentPassword.isBlank()) {
             errorMessage = "La contraseña actual es requerida"
@@ -134,27 +218,32 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
         viewModelScope.launch {
             try {
                 val token = sessionManager.token.first()
-                if (token != null) {
-                    val passwordRequest = ChangePasswordRequest(
-                        current_password = currentPassword,
-                        new_password = newPassword
-                    )
+                if (token.isNullOrBlank()) {
+                    expireSession()
+                    return@launch
+                }
+                val passwordRequest = ChangePasswordRequest(
+                    current_password = currentPassword,
+                    new_password = newPassword
+                )
 
-                    val response = ApiClient.apiService.changePassword("Bearer $token", passwordRequest)
+                val response = ApiClient.apiService.changePassword("Bearer $token", passwordRequest)
 
-                    if (response.isSuccessful) {
-                        successMessage = "Contraseña cambiada exitosamente"
-                        // Limpiar campos
-                        currentPassword = ""
-                        newPassword = ""
-                        confirmPassword = ""
-                    } else {
-                        errorMessage = when (response.code()) {
-                            401 -> "Contraseña actual incorrecta"
-                            else -> "Error al cambiar la contraseña"
-                        }
+                if (response.isSuccessful) {
+                    successMessage = "Contraseña cambiada exitosamente"
+                    // Limpiar campos
+                    currentPassword = ""
+                    newPassword = ""
+                    confirmPassword = ""
+                } else {
+                    if (response.code() == 401) expireSession()
+                    else errorMessage = when (response.code()) {
+                        400 -> "Revisa la contraseña actual y la nueva contraseña"
+                        else -> "Error al cambiar la contraseña"
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
                 Log.e("PROFILE_DEBUG", "Error changing password", e)
@@ -164,20 +253,59 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
         }
     }
 
-    private fun loadCities() {
-        isLoadingCities = true
-        viewModelScope.launch {
+    fun selectCountry(country: Country) {
+        if (isLoadingProfile || isUpdatingProfile || selectedCountryId == country.iD_Country) return
+        statesJob?.cancel()
+        citiesJob?.cancel()
+        selectedCountryId = country.iD_Country
+        selectedStateId = null
+        selectedCityId = null
+        states = emptyList()
+        cities = emptyList()
+        isLoadingCities = false
+        clearMessages()
+        isLoadingStates = true
+        statesJob = viewModelScope.launch {
             try {
-                val response = ApiClient.apiService.getCities()
-                if (response.isSuccessful && response.body() != null) {
-                    cities = response.body()!!
-                }
+                val response = ApiClient.apiService.getStates(country.iD_Country)
+                if (response.isSuccessful && response.body() != null) states = response.body()!!.states
+                else errorMessage = "No se pudieron cargar los estados. Usa Recargar."
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("PROFILE_DEBUG", "Error loading cities", e)
+                errorMessage = "Error de conexión al cargar estados. Usa Recargar."
             } finally {
-                isLoadingCities = false
+                if (kotlin.coroutines.coroutineContext[Job]?.isActive == true) isLoadingStates = false
             }
         }
+    }
+
+    fun selectState(state: State) {
+        if (isLoadingProfile || isUpdatingProfile || state.iD_Country != selectedCountryId) return
+        citiesJob?.cancel()
+        selectedStateId = state.iD_States
+        selectedCityId = null
+        cities = emptyList()
+        clearMessages()
+        isLoadingCities = true
+        citiesJob = viewModelScope.launch {
+            try {
+                val response = ApiClient.apiService.getCities(state.iD_States)
+                if (response.isSuccessful && response.body() != null) cities = response.body()!!.cities
+                else errorMessage = "No se pudieron cargar las ciudades. Usa Recargar."
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errorMessage = "Error de conexión al cargar ciudades. Usa Recargar."
+            } finally {
+                if (kotlin.coroutines.coroutineContext[Job]?.isActive == true) isLoadingCities = false
+            }
+        }
+    }
+
+    fun updateEmail(value: String) {
+        email = value
+        clearMessages()
     }
 
     fun updateUserName(newName: String) {
@@ -186,6 +314,7 @@ class ProfileViewModel(private val sessionManager: SessionManager) : ViewModel()
     }
 
     fun updateSelectedCity(cityId: Int) {
+        if (cities.none { it.iD_City == cityId && it.iD_States == selectedStateId }) return
         selectedCityId = cityId
         clearMessages()
     }

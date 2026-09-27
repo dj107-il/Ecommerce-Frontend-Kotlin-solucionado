@@ -7,7 +7,7 @@ data class UsersResponse(
     val users: List<UserProfile> = emptyList(),
 
     @SerializedName("pagination")
-    val pagination: Pagination? = null,
+    val pagination: SalesPagination? = null,
 
     @SerializedName("total")
     val total: Int = 0
@@ -27,4 +27,9 @@ data class Pagination(
 data class UpdateUserRoleRequest(
     @SerializedName("role_ids")
     val role_ids: List<Int>
+)
+
+data class RolesResponse(
+    @SerializedName("roles")
+    val roles: List<Role> = emptyList()
 )

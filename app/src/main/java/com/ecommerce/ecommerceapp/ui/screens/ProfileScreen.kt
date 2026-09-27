@@ -7,6 +7,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.ecommerce.ecommerceapp.ui.components.LocationDropdown
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -22,6 +25,7 @@ import com.ecommerce.ecommerceapp.viewmodels.ProfileViewModel
 fun ProfileScreen(
     sessionManager: SessionManager,
     onNavigateBack: () -> Unit,
+    onLoginRequired: () -> Unit = onNavigateBack,
     viewModel: ProfileViewModel = viewModel { ProfileViewModel(sessionManager) }
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -46,6 +50,11 @@ fun ProfileScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Mi Perfil") },
+                actions = {
+                    IconButton(onClick = viewModel::loadProfile, enabled = !viewModel.isUpdatingProfile && !viewModel.isLoadingProfile && !viewModel.isSessionExpired) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Recargar perfil")
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
@@ -63,6 +72,11 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (viewModel.isSessionExpired) {
+                Text("Tu sesión venció o no es válida.")
+                Button(onClick = onLoginRequired) { Text("Iniciar sesión") }
+            }
+            if (viewModel.isLoadingProfile) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             // Información del perfil
             Card(
                 modifier = Modifier.fillMaxWidth()
@@ -86,63 +100,50 @@ fun ProfileScreen(
                             Icon(Icons.Default.Person, contentDescription = null)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !viewModel.isUpdatingProfile
+                        enabled = !viewModel.isUpdatingProfile && !viewModel.isLoadingProfile && !viewModel.isSessionExpired
                     )
 
-                    // Selector de Ciudad
-                    var expandedCities by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = expandedCities,
-                        onExpandedChange = { expandedCities = !expandedCities }
-                    ) {
-                        OutlinedTextField(
-                            value = viewModel.cities.find { it.iD_City == viewModel.selectedCityId }?.CityName ?: "Seleccionar ciudad",
-                            onValueChange = { },
-                            readOnly = true,
-                            label = { Text("Ciudad") },
-                            leadingIcon = {
-                                Icon(Icons.Default.LocationOn, contentDescription = null)
-                            },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCities) },
-                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth()
-                        )
+                    val canEdit = !viewModel.isLoadingProfile && !viewModel.isUpdatingProfile && !viewModel.isSessionExpired
+                    LocationDropdown(
+                        label = "País", options = viewModel.countries,
+                        selected = viewModel.countries.find { it.iD_Country == viewModel.selectedCountryId },
+                        optionLabel = { it.CountryName }, onSelect = viewModel::selectCountry,
+                        enabled = canEdit
+                    )
+                    LocationDropdown(
+                        label = "Estado / departamento", options = viewModel.states,
+                        selected = viewModel.states.find { it.iD_States == viewModel.selectedStateId },
+                        optionLabel = { it.StatesName }, onSelect = viewModel::selectState,
+                        loading = viewModel.isLoadingStates,
+                        enabled = canEdit && viewModel.selectedCountryId != null
+                    )
+                    LocationDropdown(
+                        label = "Ciudad", options = viewModel.cities,
+                        selected = viewModel.cities.find { it.iD_City == viewModel.selectedCityId },
+                        optionLabel = { it.CityName }, onSelect = { viewModel.updateSelectedCity(it.iD_City) },
+                        loading = viewModel.isLoadingCities,
+                        enabled = canEdit && viewModel.selectedStateId != null
+                    )
 
-                        ExposedDropdownMenu(
-                            expanded = expandedCities,
-                            onDismissRequest = { expandedCities = false }
-                        ) {
-                            viewModel.cities.forEach { city ->
-                                DropdownMenuItem(
-                                    text = { Text("${city.CityName} - ${city.state}") },
-                                    onClick = {
-                                        viewModel.updateSelectedCity(city.iD_City)
-                                        expandedCities = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // Email (solo lectura)
+                    // Correo editable y validado antes de enviar
                     OutlinedTextField(
-                        value = viewModel.userProfile?.Email ?: "",
-                        onValueChange = { },
+                        value = viewModel.email,
+                        onValueChange = viewModel::updateEmail,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                         label = { Text("Email") },
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = false
+                        enabled = canEdit
                     )
 
                     // Botón actualizar perfil
                     LoadingButton(
                         text = "Actualizar Perfil",
                         isLoading = viewModel.isUpdatingProfile,
-                        onClick = viewModel::updateProfile
+                        onClick = viewModel::updateProfile,
+                        enabled = canEdit && !viewModel.isLoadingStates && !viewModel.isLoadingCities && viewModel.userProfile != null
                     )
                 }
             }
@@ -163,6 +164,7 @@ fun ProfileScreen(
 
                     Button(
                         onClick = { showChangePasswordDialog = true },
+                        enabled = !viewModel.isSessionExpired,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Lock, contentDescription = null)

@@ -259,6 +259,12 @@ fun EcommerceApp(
         composable("profile") {
             ProfileScreen(
                 sessionManager = sessionManager,
+                onLoginRequired = {
+                    navController.navigate("login") {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateBack = {
                     navController.popBackStack()
                 }
@@ -269,6 +275,12 @@ fun EcommerceApp(
         composable("user_management") {
             UserManagementScreen(
                 sessionManager = sessionManager,
+                onLoginRequired = {
+                    navController.navigate("login") {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateBack = {
                     navController.popBackStack()
                 }

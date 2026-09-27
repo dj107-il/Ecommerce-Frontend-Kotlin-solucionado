@@ -68,19 +68,19 @@ data class Sale(
     @SerializedName("DescripcionSale")
     val DescripcionSale: String = "",
 
-    @SerializedName("TotalSale")
+    @SerializedName("total")
     val TotalSale: Double = 0.0,
 
-    @SerializedName("DateSale")
+    @SerializedName("DateCreated")
     val DateSale: String = "",
 
     @SerializedName("iD_User")
     val iD_User: Int = 0,
 
     @SerializedName("user")
-    val user: User? = null,
+    val user: String? = null,
 
-    @SerializedName("sale_details")
+    @SerializedName("details")
     val sale_details: List<SaleDetail> = emptyList()
 ) : Parcelable
 
@@ -89,13 +89,10 @@ data class SaleDetail(
     @SerializedName("id_SaleDetail")
     val id_SaleDetail: Int = 0,
 
-    @SerializedName("Quantity")
+    @SerializedName("amount")
     val Quantity: Int = 0,
 
-    @SerializedName("UnitPrice")
-    val UnitPrice: Double = 0.0,
-
-    @SerializedName("Subtotal")
+    @SerializedName("ValueSale")
     val Subtotal: Double = 0.0,
 
     @SerializedName("id_Product")
@@ -103,7 +100,11 @@ data class SaleDetail(
 
     @SerializedName("product")
     val product: Product? = null
-) : Parcelable
+) : Parcelable{
+    // Precio histórico: no usar el precio actual del catálogo.
+    val UnitPrice: Double
+        get() = if (Quantity > 0) Subtotal / Quantity else 0.0
+}
 
 data class CheckoutRequest(
     @SerializedName("DescripcionSale")
@@ -121,7 +122,7 @@ data class CheckoutResponse(
     val sale_id: Int? = null
 ) {
     fun isSuccess(): Boolean {
-        return sale != null || sale_id != null
+        return (sale?.id_Sale ?: 0) > 0
     }
 }
 
@@ -130,8 +131,23 @@ data class SalesResponse(
     val sales: List<Sale> = emptyList(),
 
     @SerializedName("pagination")
-    val pagination: Pagination? = null,
+    val pagination: SalesPagination? = null,
 
     @SerializedName("total")
     val total: Int = 0
+)
+
+data class SaleResponse (
+    @SerializedName("sale") val sale: Sale? = null
+)
+
+data class SalesPagination(
+    @SerializedName("page") val page: Int = 1,
+    @SerializedName("pages") val pages: Int = 1,
+    @SerializedName("per_page") val perPage: Int = 10,
+    @SerializedName("total") val total: Int = 0
+)
+
+data class CartMutationResponse(
+    @SerializedName("message") val message: String? = null
 )
